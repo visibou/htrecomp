@@ -1,0 +1,69 @@
+# Hand-authored function boundary corrections for Hydro Thunder Hurricane.
+#
+# tools/curate_function_config.py merges this file into the generated
+# hydrothunder_functions.toml verbatim, and entries here always win. Put
+# anything you worked out by hand in this file - never in the generated one,
+# which is overwritten every time the script runs.
+#
+# Only boundary information belongs here: `end`, `size`, or `parent`. A
+# name-only entry shadows the address's .pdata record and costs that function
+# its size and exception-handler metadata for nothing.
+#
+# This file is ALSO listed directly in the manifest's `includes`, because the
+# top-level scalars below are not part of [functions] and the curation script
+# only carries [functions] across.
+
+# --- setjmp / longjmp ---------------------------------------------------------
+# 0x826A4760 is setjmp. Declaring it here makes codegen replace every call site
+# with host setjmp semantics (builders/context.cpp:179):
+#
+#   env = ctx;
+#   temp.s64 = ppc_setjmp(r3.u32);
+#   if (temp.s64 != 0) ctx = env;    // restore after a longjmp
+#   r3 = temp;
+#
+# This is both the correct translation and the fix for the boot crash, because
+# the recompiled body of setjmp is unusable - see the note on 0x826A4760 below.
+setjmp_address = 0x826A4760
+
+# longjmp's address is not yet identified. Leaving it unset is safe: the default
+# 0 matches no call site. Find it and set it before relying on any guest code
+# path that actually performs a non-local jump.
+# longjmp_address = 0x????????
+
+[functions]
+
+# 0x8266D310 / 0x8266D460 are two .pdata records that are really one function.
+# The first branches directly into the second's body (loc_8266D830, _85C, _958,
+# _960, _968, loc_8266DA28), so leaving them split makes codegen emit `goto`s to
+# labels defined in a different C++ function:
+#
+#   error: use of undeclared label 'loc_8266D830'
+#
+# Extending the first record across the second gives discovery the whole region
+# and the labels land in the right function.
+#
+# Note: `parent =` does not work for this in SDK 0.8.x. phase_register.cpp:443
+# populates chunksByParent, but nothing ever reads it; registerChunk() only
+# feeds isVacant(). Declaring a chunk leaves the bodies unmerged and the gotos
+# still dangling. Use `end` on the parent record instead. Verified empirically.
+0x8266D310 = { end = 0x8266DA34 }
+
+# setjmp, and the cause of the boot crash.
+#
+# 0x826A4760 sits in a .pdata gap (the preceding record covers 0x826A4440 and
+# ends at 0x826A4754), so it has no authoritative size. Discovery stopped at the
+# `bnectr` four instructions in and emitted a 5-instruction function:
+#
+#   lis r4,0x8296 ; lwz r0,31524(r4) ; cmpwi r0,0 ; mtctr r0 ; bnectr
+#
+# `bnectr` is CONDITIONAL. The global it dispatches through is zero in the image
+# and nothing ever writes it, so the branch is never taken and the real function
+# continues at 0x826A4774 - mflr/mfcr, then stfd f14..f31, then the VMX saves,
+# and finally `li r3,0 ; blr` at 0x826A4A24. That is setjmp.
+#
+# Truncated, the generated function fell off the end without touching r3, so the
+# caller saw the jmp_buf pointer instead of 0, concluded a longjmp had happened,
+# and took its error path -> E_UNEXPECTED -> null shader -> null deref -> the
+# guest main thread dies. See investigation-map.md for the full chain.
+0x826A4760 = { end = 0x826A4A2C }

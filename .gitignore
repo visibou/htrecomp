@@ -1,0 +1,32 @@
+# Build output. This is the 500+ MB that must never reach the repo.
+/out/
+/build/
+third_party/rexglue-sdk/out/
+
+# The user's game files. Never commit these - the project ships no game content.
+/game_data/
+/user_data/
+/cache/
+/package/
+/release-package/
+*.zip
+
+# Runtime and debug leftovers.
+/logs/
+*.log
+rex_log.txt
+crash_dump.txt
+*.pdb
+*.bak
+
+# Local settings written beside the executable at runtime.
+/hydrothunder.toml
+
+# Editor / OS noise.
+.vs/
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+Thumbs.db
+.DS_Store
