@@ -14,7 +14,7 @@ from your own legally obtained copy. See [Game files](#game-files).
 
 Everything here is beyond what the Xbox 360 release could do:
 
-|---|---|
+| | |
 | **Uncapped frame rate** | The console was locked to 30. Run it as fast as your hardware allows, or cap it to any refresh rate you like. |
 | **Any output resolution** | 1080p, 1440p, 4K. The game's own scene render target is a fixed size, so raising the output resolution costs essentially nothing - measured identical frame times from 1080p to 4K. |
 | **Higher internal resolution** | A separate scale for the 3D scene itself, for when you do want to spend the GPU time. |
