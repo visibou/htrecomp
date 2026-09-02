@@ -14,7 +14,6 @@ from your own legally obtained copy. See [Game files](#game-files).
 
 Everything here is beyond what the Xbox 360 release could do:
 
-| | |
 |---|---|
 | **Uncapped frame rate** | The console was locked to 30. Run it as fast as your hardware allows, or cap it to any refresh rate you like. |
 | **Any output resolution** | 1080p, 1440p, 4K. The game's own scene render target is a fixed size, so raising the output resolution costs essentially nothing - measured identical frame times from 1080p to 4K. |
@@ -144,7 +143,7 @@ memory on a 16 GB machine.
 ## Known limitations
 
 - **DLC is not supported yet - planned for 1.1.0.** Installing it makes the
-  game crash on Start most of the time, so the option is switched off rather
+  game crash after booting, so the option is switched off rather
   than shipped broken. The base game is unaffected.
 
 ## Credits
