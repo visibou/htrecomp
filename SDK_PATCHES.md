@@ -119,6 +119,47 @@ Xenia.
 
 ---
 
+## 6. DLC enumeration returned an uninitialized record
+
+**File** `src/system/xam/content_manager.cpp` — `ContentManager::ListContent`
+
+**Symptom** With the DLC installed, pressing Start on the title screen ended the
+game. Whether the process then crashed or just sat there varied run to run, which
+is why it was first reported as "crashes most of the time". The guest dying was
+deterministic every time: the log shows `Execution complete` right after the press.
+
+**Cause** `ListContent` tested `ReadContentHeaderFile` with `XSUCCEEDED`. That
+macro is an NTSTATUS test (`(s & 0xC0000000) == 0`), but the function returns
+Win32-style `X_RESULT`s, and `X_ERROR_FILE_NOT_FOUND` (2) passes it. So a package
+with no `.header` file went down the "header was read" branch and was enumerated
+as an **uninitialized** `XCONTENT_AGGREGATE_DATA` (host stack garbage). The game
+opens each enumerated package using its file name as the root name, so
+`XamContentCreate` got that garbage, `rex::to_path` threw `utf8::invalid_utf8`
+from `ResolvePackagePath`, and the C++ exception unwound through the guest
+thread. The randomness came from the stack contents, not from the DLC.
+
+**Evidence** A C++-exception backtrace in the VEH (`XamContentCreateEx ->
+ContentExists -> ResolvePackagePath -> to_path -> utf8to16`). Hooking
+`XContentCreate` (`sub_823EDCE0`) and `XEnumerate` (`sub_823EDE50`) showed
+`XamEnumerate` returning count 1 with host stack pointers in the buffer.
+`ListContent` called directly returned the same garbage. With a valid `.header`
+written, 3/3 runs survived where 3/3 had died, and a DLC race loaded.
+
+**Fix** Compare against `X_ERROR_SUCCESS`. The no-header fallback that
+synthesises the record from the directory name now runs as intended, so a
+header-less package no longer kills the game. It is still **hidden**, though: with
+no header, `OpenContent` reports license mask 0 and the game leaves unlicensed DLC
+out of the track list. That is why `src/ht_setup.cpp` writes a real `.header`
+(display name plus the full license mask) on import, and backfills one for any
+installed DLC folder that lacks it. The mask is the full one rather than the
+package's own bit 0, which shows the DLC's tracks but hides its boats.
+
+> The other `XSUCCEEDED(result)` uses in `src/kernel/xam/xam_content.cpp` have
+> the same mismatch but are harmless here (they only decide whether to write a
+> header or a license mask after a call that already failed). Left alone.
+
+---
+
 ## Not an SDK patch, but easy to lose
 
 The actual audio stutter fix is `timeBeginPeriod(1)` in `src/main.cpp`

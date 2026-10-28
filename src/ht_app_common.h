@@ -11,6 +11,7 @@
 
 // Defined in ht_version.h so the settings panel can show the build without
 // pulling in the whole app framework. One definition, two consumers.
+#include "ht_mods.h"
 #include "ht_setup.h"
 #include "ht_version.h"
 
@@ -86,6 +87,10 @@ class HtBaseApp : public rex::ReXApp {
     if (!ht::EnsureGameData(exe_dir)) {
       return false;
     }
+
+    // 6. Mods: build <exe>/mods/ into content packages before the game
+    // enumerates its content. Never stops the launch - see src/ht_mods.h.
+    ht::BuildMods(exe_dir);
 
     if (f) { fprintf(f, "SetupEnvironment complete\n"); fclose(f); }
     return true;

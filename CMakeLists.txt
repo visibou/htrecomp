@@ -11,7 +11,7 @@ if(HTRECOMP_STATIC_MSVC_RUNTIME)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(hydrothunder VERSION 1.0.0 LANGUAGES CXX)
+project(hydrothunder VERSION 2.0.0 LANGUAGES CXX)
 
 if(WIN32)
     enable_language(RC)
@@ -72,6 +72,9 @@ set(HT_SOURCES
     src/ht_settings_overlay.cpp
     src/ht_fps_overlay.cpp
     src/ht_setup.cpp
+    src/ht_mods.cpp
+    src/ht_mods_merge.cpp
+    src/ht_fov.cpp
 )
 
 # Executable icon. enable_language(RC) is set above; the .rc references
@@ -104,6 +107,11 @@ else()
 endif()
 
 target_link_libraries(hydrothunder PRIVATE rex::runtime)
+# Mod support (src/ht_mods.cpp): TOML manifests, LZX for reading the game's
+# archives, and stb_image (vendored in the SDK's tracy copy) for PNG skins.
+target_link_libraries(hydrothunder PRIVATE tomlplusplus mspack)
+target_compile_definitions(hydrothunder PRIVATE
+    HT_STB_IMAGE_H="${REXSDK_DIR}/thirdparty/tracy/profiler/src/stb_image.h")
 # rexglue SDK provides a helper to apply standard config to the host target
 if(COMMAND rexglue_configure_target)
     rexglue_configure_target(hydrothunder)

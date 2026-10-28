@@ -1,4 +1,4 @@
-# Hydro Thunder Hurricane: Recompiled - default settings
+# Hydro Thunder Hurricane Recompiled - default settings
 #
 # This file ships beside the executable as `hydrothunder.toml`. Everything in
 # it can be changed in-game with F5; the panel merges its changes back into
@@ -41,6 +41,11 @@ resolution_scale = 1
 # Keep compiled shaders between runs so the first lap does not stutter.
 store_shaders = true
 async_shader_compilation = true
+
+# --- Game --------------------------------------------------------------------
+# Horizontal field of view of the race camera, in degrees (60-140). 0 keeps the
+# game's own 100. Takes effect when the next race starts.
+fov_horizontal = 0.0
 
 # --- Fixes -------------------------------------------------------------------
 # The game draws its point lights with the depth test switched off, which on PC

@@ -155,6 +155,17 @@ LONG CALLBACK HtVectoredHandler(EXCEPTION_POINTERS* info) {
 #include "ht_debug_hooks.h"
 #endif
 
+// ---------------------------------------------------------------------------
+// Developer overlays.
+//
+// The SDK's F3 debug overlay, backtick console and F4 raw cvar dialog are off
+// in a release build (see OnCreateDialogs). Build with -DHT_DEV_TOOLS=1 to
+// keep them while working on the port.
+// ---------------------------------------------------------------------------
+#ifndef HT_DEV_TOOLS
+#define HT_DEV_TOOLS 0
+#endif
+
 class HtPureApp : public HtBaseApp {
  public:
   using HtBaseApp::HtBaseApp;
@@ -207,11 +218,11 @@ class HtPureApp : public HtBaseApp {
 
     // The release window title.
     //
-    // Set here rather than by renaming the app, because GetName() also builds
-    // the config filename (rex_app.cpp:112) - and the release title contains a
-    // colon, which is illegal in a Windows path. The SDK sets its own title
-    // during setup (rex_app.cpp:291), so this has to run afterwards; this hook
-    // does, and window() is public.
+    // Set rather than by renaming the app, because GetName() also builds the
+    // config filename (rex_app.cpp:112) and the log prefix, which must stay
+    // "hydrothunder". The SDK sets "<name> <SDK build>" during setup
+    // (rex_app.cpp:291); OnCreateDialogs already replaces it, and this repeats
+    // it after launch in case anything set it in between.
     if (auto* win = window()) {
       win->SetTitle(HT_WINDOW_TITLE);
     }
@@ -274,6 +285,12 @@ class HtPureApp : public HtBaseApp {
   // This hangs off the SDK's documented extension point rather than patching
   // the SDK, so it survives an SDK upgrade untouched. See SDK_PATCHES.md.
   void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {
+    // Runs right after the SDK titles the window with its own build stamp, so
+    // the release title is all the player ever sees. See OnPostLaunchModule.
+    if (auto* win = window()) {
+      win->SetTitle(HT_WINDOW_TITLE);
+    }
+
     auto toggle_fps = [this, drawer](bool on) {
       if (on && !ht_fps_) {
         ht_fps_ = std::make_unique<HtFpsOverlay>(drawer);
@@ -304,6 +321,17 @@ class HtPureApp : public HtBaseApp {
     }
 
     HtBaseApp::OnCreateDialogs(drawer);
+
+#if !HT_DEV_TOOLS
+    // The SDK registers its developer overlays before this hook runs: the
+    // engine debug overlay (F3), the log console (backtick) and the raw cvar
+    // dialog (F4). They are tools for working on the port, not for playing
+    // it, so a release build switches them off. Everything a player needs is
+    // in the F5 panel, key bindings included.
+    rex::ui::UnregisterBind("bind_debug_overlay");
+    rex::ui::UnregisterBind("bind_console");
+    rex::ui::UnregisterBind("bind_settings");
+#endif
   }
 
  private:
