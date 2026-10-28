@@ -14,6 +14,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <string>
 
 #include <rex/ui/imgui_dialog.h>
@@ -41,6 +42,7 @@ enum class HtRowKind {
   kFrameRate,  // vsync + video_mode_refresh_rate, as one coherent control
   kSaveTools,  // save file status and the "back up now" button
   kAbout,      // build identity and the player-facing keybinds
+  kMods,       // installed mods, their state and errors (src/ht_mods.h)
 };
 
 // A single row. The panel is described entirely by tables of these, so the
@@ -104,6 +106,9 @@ class HtSettingsDialog : public rex::ui::ImGuiDialog {
   // this is in the player-facing panel rather than a script.
   void DrawSaveTools();
   void DrawAbout();
+  // The mods BuildMods found at launch, with on/off switches. Changes apply
+  // on the next launch: the game enumerates its content once, at startup.
+  void DrawMods();
 
   // Renders a table of rows. When `filter` is non-empty only rows whose label
   // or cvar name contains it are drawn, and the structural rows (separators,
@@ -131,6 +136,10 @@ class HtSettingsDialog : public rex::ui::ImGuiDialog {
   std::filesystem::path config_path_;
   std::filesystem::path user_data_root_;
   std::string save_status_;
+  std::string mods_status_;
+  // Mod folders switched on or off in this session, by folder name; they
+  // differ from what is loaded until the next launch.
+  std::map<std::string, bool> mods_changed_;
   // Search box contents. Non-empty replaces the tabs with a flat result list;
   // 190-odd cvars are hard to browse but easy to search.
   char filter_[64] = {};

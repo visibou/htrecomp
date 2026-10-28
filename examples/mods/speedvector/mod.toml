@@ -1,0 +1,26 @@
+# Example mod: a faster Vector, and a new skin for it and for Vector.
+# Copy this folder into mods/ next to the executable. See MODDING.md.
+
+id = "speedvector"
+name = "Speed Vector"
+version = "1.0"
+author = "htrecomp"
+
+[[boat]]
+id = "Rocket"
+base = "Vector"
+name = "Rocket"
+description = "A Vector with a far bigger engine. Mind the docks."
+
+[boat.tuning]
+Engine = { "Max Forward Speed" = 250, "Max Thrust" = 260000 }
+Stats = { TopSpeed = 10, Acceleration = 10 }
+
+[[skin]]
+id = "Pirate"
+boats = ["Rocket"]
+name = "Rocket Pirate"
+# Reuses a texture that ships with the game, so this example contains no
+# game files. For your own skin, paint over mods/_templates/Vector.png and use:
+#   texture = "skins/myskin.png"
+texture_asset = "Boats/Vector_pirate"

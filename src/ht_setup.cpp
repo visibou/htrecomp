@@ -1,6 +1,10 @@
 #include "ht_setup.h"
+#include "ht_version.h"
 
 #include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -10,6 +14,8 @@
 #include <rex/filesystem/file.h>
 #include <rex/logging.h>
 #include <rex/system.h>
+#include <rex/system/xam/content_device.h>
+#include <rex/system/xam/content_manager.h>
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -29,6 +35,7 @@ using rex::X_STATUS;
 // Hardcoded because this is a single-title port and the import happens before
 // the kernel exists, so there is nothing to ask.
 constexpr const char* kTitleId = "5841096A";
+constexpr uint32_t kTitleIdValue = 0x5841096A;
 constexpr const char* kDlcContentType = "00000002";  // XContentType::kMarketplaceContent
 constexpr const char* kDlcXuid = "0000000000000000";
 
@@ -36,12 +43,24 @@ constexpr const char* kDlcXuid = "0000000000000000";
 // entries inside it are large.
 constexpr size_t kCopyChunk = 1u << 20;
 
+// Titled with the game's name: the SDK's ShowSimpleMessageBox calls every box
+// "ReXGlue", which means nothing to a player.
+constexpr const char* kDialogTitle = HT_WINDOW_TITLE;
+
 void Info(const std::string& message) {
+#if defined(_WIN32)
+  ::MessageBoxA(nullptr, message.c_str(), kDialogTitle, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+#else
   rex::ShowSimpleMessageBox(rex::SimpleMessageBoxType::Help, message);
+#endif
 }
 
 void Error(const std::string& message) {
+#if defined(_WIN32)
+  ::MessageBoxA(nullptr, message.c_str(), kDialogTitle, MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+#else
   rex::ShowSimpleMessageBox(rex::SimpleMessageBoxType::Error, message);
+#endif
 }
 
 #if defined(_WIN32)
@@ -151,63 +170,20 @@ bool ExtractTree(rex::filesystem::Entry* entry, const std::filesystem::path& des
   return true;
 }
 
-// Repairs entries whose names arrive with the parent directory glued on.
+// Packages are extracted VERBATIM - never "tidy" what comes out.
 //
-// The DLC package's directory table contains BOTH of these, as six separate
-// entries (confirmed by logging the SDK's own parse of the table):
+// The DLC is the case that proves it. Its directory table holds both
 //
-//     Audio/Xbox360/Pack01Track01.fsb            16 bytes
-//     Audio/Xbox360Pack01Track01.fsb     11,267,136 bytes
+//     Audio/Xbox360/Pack01Track01.fsb            16 bytes  ("Pack01Track01 \r\n")
+//     Audio/Xbox360Pack01Track01.fsb     11,267,136 bytes  (the real FSB4 audio)
 //
-// The flattened name is exactly the directory name concatenated with the file
-// name, and the real audio only exists under that flattened entry while a
-// 16-byte stub sits at the proper path. Extracted as-is, the game reads the
-// stub and dies the moment you press Start; moving the large file onto the
-// stub makes it work. Both directions were verified on the real DLC.
-//
-// Whether the console resolves those stubs some other way, or the packer wrote
-// the table oddly, is not established - but the repair is narrow (it only
-// fires when a real file's name is precisely <dir><file> beside that dir, and
-// only when it is bigger than what it replaces) and the result is verified to
-// run.
-int RepairFlattenedNames(const std::filesystem::path& root) {
-  std::error_code ec;
-  int repaired = 0;
-  for (auto it = std::filesystem::recursive_directory_iterator(root, ec);
-       it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-    if (ec || !it->is_directory(ec)) {
-      continue;
-    }
-    const auto dir = it->path();
-    const auto parent = dir.parent_path();
-    const auto dir_name = dir.filename().string();
-
-    for (auto f = std::filesystem::directory_iterator(dir, ec);
-         f != std::filesystem::directory_iterator(); f.increment(ec)) {
-      if (ec || !f->is_regular_file(ec)) {
-        continue;
-      }
-      const auto nested = f->path();
-      const auto flattened = parent / (dir_name + nested.filename().string());
-      if (!std::filesystem::exists(flattened, ec)) {
-        continue;
-      }
-      const auto flat_size = std::filesystem::file_size(flattened, ec);
-      const auto nested_size = std::filesystem::file_size(nested, ec);
-      if (ec || flat_size <= nested_size) {
-        continue;
-      }
-      std::filesystem::remove(nested, ec);
-      std::filesystem::rename(flattened, nested, ec);
-      if (!ec) {
-        REXLOG_INFO("[ht-setup]   repaired {} ({} bytes, was {})",
-                    nested.filename().string(), flat_size, nested_size);
-        ++repaired;
-      }
-    }
-  }
-  return repaired;
-}
+// and the game opens the SECOND one: during a Bermuda Triangle race it asks for
+// 'dlc:\Audio\Xbox360Pack01Track01.fsb', with no separator. That is how it
+// behaves on a console too, and the packer laid the files out to match - the
+// stubs are just the names the game lists. An earlier build "repaired" this
+// by moving the big file onto the stub, which deleted the very file the game
+// reads. Whatever the package says is what the console sees, so that is what
+// goes on disk.
 
 // Reads a XEX's encryption and compression flags.
 //
@@ -448,20 +424,151 @@ bool ExtractPackage(const std::filesystem::path& package, const std::filesystem:
   }
   REXLOG_INFO("[ht-setup] extracted {} file(s) from '{}' to '{}'", files, package.string(),
               dest.string());
-  const int repaired = RepairFlattenedNames(dest);
-  if (repaired) {
-    REXLOG_INFO("[ht-setup] repaired {} file(s) with flattened names", repaired);
+  return true;
+}
+
+// --- DLC ---------------------------------------------------------------------
+
+// content_root/0000000000000000/5841096A/00000002/ - see ht_setup.h.
+std::filesystem::path DlcRoot(const std::filesystem::path& exe_dir) {
+  return exe_dir / "user_data" / kDlcXuid / kTitleId / kDlcContentType;
+}
+
+// content_root/0000000000000000/5841096A/Headers/00000002/<name>.header
+std::filesystem::path DlcHeaderPath(const std::filesystem::path& exe_dir, const std::string& name) {
+  return exe_dir / "user_data" / kDlcXuid / kTitleId / "Headers" / kDlcContentType /
+         (name + ".header");
+}
+
+// The game uses this as the content's root name and the SDK as its directory
+// name, so both must be the same string - and XCONTENT_DATA holds 42 chars.
+std::string DlcName(const std::filesystem::path& package) {
+  std::string name = rex::path_to_utf8(package.filename());
+  if (name.size() > sizeof(rex::system::xam::XCONTENT_DATA::file_name_raw)) {
+    name.resize(sizeof(rex::system::xam::XCONTENT_DATA::file_name_raw));
+  }
+  return name;
+}
+
+bool AnyDlcInstalled(const std::filesystem::path& exe_dir) {
+  std::error_code ec;
+  for (auto it = std::filesystem::directory_iterator(DlcRoot(exe_dir), ec);
+       it != std::filesystem::directory_iterator(); it.increment(ec)) {
+    if (!ec && it->is_directory(ec)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Is this the marketplace content of THIS game? Checked before anything is
+// written, so picking the wrong file is a message rather than a stray folder.
+std::unique_ptr<rex::filesystem::StfsHeader> ReadDlcHeader(const std::filesystem::path& package) {
+  auto header = rex::filesystem::StfsContainerDevice::ReadPackageHeader(package);
+  if (!header) {
+    return nullptr;
+  }
+  if (header->metadata.content_type != rex::system::XContentType::kMarketplaceContent ||
+      uint32_t(header->metadata.execution_info.title_id) != kTitleIdValue) {
+    return nullptr;
+  }
+  return header;
+}
+
+// The license every installed DLC gets: all of it.
+//
+// The package's own licence entries (what ContentManager::InstallContent
+// would derive) grant the Tempest Pack only bit 0. That is enough for its
+// tracks, but the boat menu hides a boat whose AssetDB names a package without
+// the bits it checks (sub_82226C88), so with bit 0 alone the DLC's own boats -
+// Whiplash, Psyclone and the X boats - never appear. Verified both ways on the
+// same install. The player supplied the package from their own copy, so it is
+// licensed in full.
+constexpr uint32_t kDlcLicenseMask = 0xFFFFFFFFu;
+
+// Writes the .header file ContentManager reads when it enumerates the DLC.
+//
+// This file is NOT optional, whatever an earlier note here claimed:
+//   * without it the stock SDK enumerated the package as an uninitialised
+//     record and the game died on Start (SDK_PATCHES.md #6);
+//   * with that fixed, the package is enumerated but opens with license mask
+//     0, and the game HIDES unlicensed DLC - the track list simply ends at the
+//     base game's last track. Verified both ways on the same install.
+//
+// Layout matches ContentManager::WriteContentHeaderFile: the raw
+// XCONTENT_AGGREGATE_DATA, then the license mask as a host-endian u32.
+bool WriteDlcHeader(const std::filesystem::path& exe_dir, const std::string& name,
+                    const std::u16string& display_name, uint32_t license_mask) {
+  rex::system::xam::XCONTENT_AGGREGATE_DATA data;
+  std::memset(&data, 0, sizeof(data));
+  data.device_id = static_cast<uint32_t>(rex::system::xam::DummyDeviceId::HDD);
+  data.content_type = rex::system::XContentType::kMarketplaceContent;
+  data.set_display_name(display_name.empty() ? rex::path_to_utf16(name) : display_name);
+  data.set_file_name(name);
+  data.xuid = 0;
+  data.title_id = kTitleIdValue;
+
+  const auto path = DlcHeaderPath(exe_dir, name);
+  std::error_code ec;
+  std::filesystem::create_directories(path.parent_path(), ec);
+  std::FILE* out = std::fopen(path.string().c_str(), "wb");
+  if (!out) {
+    REXLOG_ERROR("[ht-setup] could not create '{}'", path.string());
+    return false;
+  }
+  const bool ok = std::fwrite(&data, sizeof(data), 1, out) == 1 &&
+                  std::fwrite(&license_mask, sizeof(license_mask), 1, out) == 1;
+  std::fclose(out);
+  REXLOG_INFO("[ht-setup] wrote DLC header '{}' (license mask {:08X})", path.string(),
+              license_mask);
+  return ok;
+}
+
+// Unpacks one DLC package into place. Returns true only if it was installed.
+//
+// Extracts into a staging folder OUTSIDE the content root and moves it in only
+// once complete. Every directory under the content root is enumerated as a
+// package, so a half-written one there would be handed to the game.
+bool InstallDlc(const std::filesystem::path& exe_dir, const std::filesystem::path& package,
+                const rex::filesystem::StfsHeader& header) {
+  const std::string name = DlcName(package);
+  const auto dest = DlcRoot(exe_dir) / name;
+  const auto staging = exe_dir / "user_data" / "dlc_staging" / name;
+
+  std::error_code ec;
+  std::filesystem::remove_all(staging, ec);
+  if (!ExtractPackage(package, staging)) {
+    std::filesystem::remove_all(staging, ec);
+    return false;
+  }
+  std::filesystem::create_directories(dest.parent_path(), ec);
+  std::filesystem::remove_all(dest, ec);
+  std::filesystem::rename(staging, dest, ec);
+  if (ec) {
+    REXLOG_ERROR("[ht-setup] could not move DLC into place: {}", ec.message());
+    Error("The DLC unpacked, but could not be moved into place.\n\n"
+          "See the log next to this program for details.");
+    std::filesystem::remove_all(staging, ec);
+    return false;
+  }
+  std::filesystem::remove(staging.parent_path(), ec);  // only if now empty
+
+  if (!WriteDlcHeader(exe_dir, name,
+                      header.metadata.display_name(rex::system::XLanguage::kEnglish),
+                      kDlcLicenseMask)) {
+    Error("The DLC unpacked, but its content header could not be written.\n\n"
+          "See the log next to this program for details.");
+    return false;
   }
   return true;
 }
 
-// Kept compiled but not called - see the note at its call site in
-// EnsureGameData for why DLC import is disabled for this release.
-// Returns true only if DLC was actually installed.
+// Asks for the DLC and installs it. Returns true only if it was installed.
 bool ImportOptionalDlc(const std::filesystem::path& exe_dir) {
-  if (!AskYesNo("Do you also have the Hydro Thunder Hurricane DLC?\n\n"
-                "This is optional - the game runs fine without it. You can add it\n"
-                "later by deleting the user_data folder and relaunching.\n\n"
+  if (!AskYesNo("Do you also have the Hydro Thunder Hurricane DLC (the Tempest Pack)?\n\n"
+                "This is optional - the game runs fine without it. To add it later,\n"
+                "put the DLC package file in the 'dlc' folder next to this program\n"
+                "and start the game again.\n\n"
                 "Select it now?",
                 "Optional DLC")) {
     return false;
@@ -471,16 +578,97 @@ bool ImportOptionalDlc(const std::filesystem::path& exe_dir) {
   if (!PickFile("Select your Hydro Thunder Hurricane DLC package", &package)) {
     return false;
   }
-
-  // See ht_setup.h: xuid is ZERO for marketplace content, and the package
-  // becomes a DIRECTORY named after the container file.
-  const auto dest = exe_dir / "user_data" / kDlcXuid / kTitleId / kDlcContentType /
-                    package.filename();
-  if (!ExtractPackage(package, dest)) {
+  auto header = ReadDlcHeader(package);
+  if (!header) {
+    Error("That file is not Hydro Thunder Hurricane DLC.\n\n"
+          "Expected the DLC package itself - a file whose name is a long string\n"
+          "of hex characters, with no file extension.");
+    return false;
+  }
+  if (!InstallDlc(exe_dir, package, *header)) {
     return false;
   }
   Info("DLC installed.");
   return true;
+}
+
+// Offers the DLC once to an install that predates DLC support. The answer is
+// remembered so a player who has no DLC is not asked on every launch.
+void OfferDlcOnce(const std::filesystem::path& exe_dir) {
+  const auto marker = exe_dir / "user_data" / "dlc_offered";
+  std::error_code ec;
+  if (AnyDlcInstalled(exe_dir) || std::filesystem::exists(marker, ec)) {
+    return;
+  }
+  ImportOptionalDlc(exe_dir);
+  std::filesystem::create_directories(marker.parent_path(), ec);
+  if (std::FILE* f = std::fopen(marker.string().c_str(), "wb")) {
+    std::fclose(f);
+  }
+}
+
+// Gives every installed DLC folder a .header with the full license:
+//   * a folder without one (DLC copied in by hand, without its Headers
+//     folder) gets one. The package is not available here, so the display
+//     name is the folder name - the game shows neither;
+//   * a header from an earlier build, which copied the package's bit 0 and so
+//     hid the DLC's boats, has its license raised in place.
+// Mod packages (Mod_*) are written by ht_mods.cpp and left alone.
+void EnsureDlcHeaders(const std::filesystem::path& exe_dir) {
+  std::error_code ec;
+  for (auto it = std::filesystem::directory_iterator(DlcRoot(exe_dir), ec);
+       it != std::filesystem::directory_iterator(); it.increment(ec)) {
+    if (ec || !it->is_directory(ec)) {
+      continue;
+    }
+    const std::string name = rex::path_to_utf8(it->path().filename());
+    if (name.rfind("Mod_", 0) == 0) {
+      continue;
+    }
+    const auto path = DlcHeaderPath(exe_dir, name);
+    if (!std::filesystem::exists(path, ec)) {
+      REXLOG_WARN("[ht-setup] DLC '{}' has no content header; writing one", name);
+      WriteDlcHeader(exe_dir, name, {}, kDlcLicenseMask);
+      continue;
+    }
+    // The mask is the host-endian u32 after the aggregate data.
+    constexpr auto kMaskOffset = sizeof(rex::system::xam::XCONTENT_AGGREGATE_DATA);
+    std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+    uint32_t mask = 0;
+    if (f.seekg(kMaskOffset) && f.read(reinterpret_cast<char*>(&mask), sizeof(mask)) &&
+        mask != kDlcLicenseMask) {
+      f.seekp(kMaskOffset);
+      f.write(reinterpret_cast<const char*>(&kDlcLicenseMask), sizeof(kDlcLicenseMask));
+      REXLOG_INFO("[ht-setup] DLC '{}': license {:08X} -> {:08X}", name, mask, kDlcLicenseMask);
+    }
+  }
+}
+
+// Installs any DLC package the player dropped into <exe>/dlc/. This is the
+// "add it later" route; packages already installed are skipped, so the files
+// can stay there. Anything that is not this game's DLC is only logged - a
+// popup would come back on every launch.
+void ImportDroppedDlc(const std::filesystem::path& exe_dir) {
+  std::error_code ec;
+  for (auto it = std::filesystem::directory_iterator(exe_dir / "dlc", ec);
+       it != std::filesystem::directory_iterator(); it.increment(ec)) {
+    if (ec || !it->is_regular_file(ec)) {
+      continue;
+    }
+    const auto package = it->path();
+    if (std::filesystem::exists(DlcRoot(exe_dir) / DlcName(package), ec)) {
+      continue;
+    }
+    auto header = ReadDlcHeader(package);
+    if (!header) {
+      REXLOG_WARN("[ht-setup] dlc/{} is not Hydro Thunder Hurricane DLC; ignored",
+                  rex::path_to_utf8(package.filename()));
+      continue;
+    }
+    if (InstallDlc(exe_dir, package, *header)) {
+      Info("DLC installed from the dlc folder.");
+    }
+  }
 }
 
 }  // namespace
@@ -497,14 +685,13 @@ bool EnsureGameData(const std::filesystem::path& exe_dir) {
     if (!ValidateXexUsable(exe_dir, xex)) {
       return false;
     }
-    // DLC import would go here, and is deliberately not offered - see the
-    // note on ImportOptionalDlc. The plumbing to add DLC to an existing
-    // install without reinstalling is written and works; only the crash it
-    // causes is unresolved.
+    ImportDroppedDlc(exe_dir);
+    OfferDlcOnce(exe_dir);
+    EnsureDlcHeaders(exe_dir);
     return true;
   }
 
-  Info("Hydro Thunder Hurricane: Recompiled\n\n"
+  Info("Hydro Thunder Hurricane Recompiled\n\n"
        "This port does not include any game content, so it needs the files\n"
        "from your own copy of the game.\n\n"
        "On the next screen, select your Hydro Thunder Hurricane package - the\n"
@@ -538,31 +725,21 @@ bool EnsureGameData(const std::filesystem::path& exe_dir) {
     return false;
   }
 
-  // DLC import is DISABLED for this release, deliberately.
-  //
-  // The importer unpacks the DLC without error, but pressing Start then
-  // crashes the game MOST of the time - and the "most" is the important part.
-  // Measured over repeated launches from an identical install:
-  //
-  //     DLC present : CRASHED, ALIVE, CRASHED   (plus the original report)
-  //     DLC absent  : ALIVE,   ALIVE, ALIVE
-  //
-  // So the DLC does cause it, but probabilistically. Single-run A/B tests are
-  // therefore worthless here: three separate conclusions were drawn from one
-  // lucky launch each before this was noticed. Anything claimed about this
-  // crash needs a repeated trial, not one observation.
-  //
-  // RepairFlattenedNames (above) fixes a genuine defect in what we write - the
-  // package yields 16-byte stubs at Audio/Xbox360/*.fsb alongside the real
-  // audio under flattened names, confirmed by logging the SDK's own parse of
-  // the directory table - but repairing it did NOT stop the crash. So the
-  // layout is not the cause, and the real cause is still unknown.
-  //
-  // Shipping a one-click button that bricks the game is far worse than not
-  // shipping it, so the prompt stays off until that is understood. The code
-  // is kept and working for when it is:
-  //
-  //   ImportOptionalDlc(exe_dir);
+  // DLC. In 1.0.0 this was switched off because Start "crashed most of the
+  // time" with it installed. The guest actually died EVERY time - only the
+  // teardown afterwards varied - and the cause was the SDK enumerating a
+  // header-less package as an uninitialised record (SDK_PATCHES.md #6). Both
+  // that and the missing header are fixed, so it is offered again.
+  ImportDroppedDlc(exe_dir);
+  if (!AnyDlcInstalled(exe_dir)) {
+    ImportOptionalDlc(exe_dir);
+  }
+  // Asked here already; do not ask again on the next launch.
+  const auto marker = exe_dir / "user_data" / "dlc_offered";
+  std::filesystem::create_directories(marker.parent_path(), ec);
+  if (std::FILE* f = std::fopen(marker.string().c_str(), "wb")) {
+    std::fclose(f);
+  }
 
   Info("Setup complete. The game will start now.");
   return true;

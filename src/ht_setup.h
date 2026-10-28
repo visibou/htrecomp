@@ -19,8 +19,12 @@
 //                 for marketplace content ("DLCs are stored in common
 //                 directory"). Installing it under the console's own id looks
 //                 right and is silently never found.
-//                 No .header file is needed: ContentManager::ListContent falls
-//                 back to synthesising the metadata from the directory name.
+//              +  <exe>/user_data/0000000000000000/5841096A/Headers/00000002/<name>.header
+//                 The content's display name and license mask. Write it: the
+//                 stock SDK enumerated a header-less package as garbage and the
+//                 game died on Start (SDK_PATCHES.md #6).
+//
+// The DLC can also be added later by dropping its package into <exe>/dlc/.
 
 #pragma once
 

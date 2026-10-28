@@ -23,6 +23,7 @@
 #include <imgui.h>
 #include <rex/cvar.h>
 
+#include "ht_mods.h"
 #include "ht_version.h"
 
 REXCVAR_DEFINE_BOOL(ht_show_fps, false, "Game",
@@ -189,7 +190,28 @@ constexpr HtRow kInputRows[] = {
     S("mnk_sensitivity", "Mouse sensitivity", "Scales mouse movement into right-stick travel."),
     S("mnk_user_index", "Controller slot", "Which of the four pad slots the keyboard occupies."),
     Sep(),
-    Note("Key bindings live in the advanced dialog (F4), under Input/Keybinds."),
+    Note("Keyboard and mouse bindings, used in mouse & keyboard mode. Type a key name: a "
+         "letter, Space, Shift, Tab, Escape, Up/Down/Left/Right, or LMB/RMB/MMB for the mouse."),
+    S("keybind_right_trigger", "Throttle (right trigger)"),
+    S("keybind_left_trigger", "Brake (left trigger)"),
+    S("keybind_lstick_left", "Steer left"),
+    S("keybind_lstick_right", "Steer right"),
+    S("keybind_lstick_up", "Lean forward"),
+    S("keybind_lstick_down", "Lean back"),
+    S("keybind_a", "A button"),
+    S("keybind_b", "B button"),
+    S("keybind_x", "X button"),
+    S("keybind_y", "Y button"),
+    S("keybind_left_shoulder", "Left shoulder"),
+    S("keybind_right_shoulder", "Right shoulder"),
+    S("keybind_lstick_press", "Left stick press"),
+    S("keybind_rstick_press", "Right stick press"),
+    S("keybind_dpad_up", "D-pad up"),
+    S("keybind_dpad_down", "D-pad down"),
+    S("keybind_dpad_left", "D-pad left"),
+    S("keybind_dpad_right", "D-pad right"),
+    S("keybind_back", "Back"),
+    S("keybind_start", "Start"),
 };
 
 constexpr HtRow kGameRows[] = {
@@ -198,6 +220,9 @@ constexpr HtRow kGameRows[] = {
     E("user_language", "Language",
       "The console language reported to the game. Unsupported ones fall back to English.",
       kLanguageOptions, int(std::size(kLanguageOptions))),
+    S("fov_horizontal", "Field of view (degrees)",
+      "The race camera's horizontal field of view. 0 keeps the game's own 100. "
+      "Takes effect when the next race starts."),
     Sep(),
     Special(HtRowKind::kSaveTools, nullptr),
     Sep(),
@@ -205,6 +230,13 @@ constexpr HtRow kGameRows[] = {
       "Applies a title update file placed beside the game, if you have one."),
     Sep(),
     Special(HtRowKind::kAbout, nullptr),
+};
+
+constexpr HtRow kModRows[] = {
+    Note("Mods add boats and skins; they never replace anything. Put a mod's folder in mods/ "
+         "next to the executable. See MODDING.md."),
+    Sep(),
+    Special(HtRowKind::kMods, nullptr),
 };
 
 constexpr HtRow kFixRows[] = {
@@ -246,6 +278,7 @@ constexpr HtTab kTabs[] = {
     {"Audio", kAudioRows, int(std::size(kAudioRows))},
     {"Input", kInputRows, int(std::size(kInputRows))},
     {"Game", kGameRows, int(std::size(kGameRows))},
+    {"Mods", kModRows, int(std::size(kModRows))},
     {"Fixes", kFixRows, int(std::size(kFixRows))},
 };
 
@@ -786,13 +819,13 @@ std::string TimeStamp() {
 //
 // A shipped build has to be able to answer "which version is this?" without
 // reading a log, and the keybinds are otherwise only discoverable by knowing
-// they exist. F7 and F8 are deliberately absent here - they are on the
-// Developer tab, where they belong.
+// they exist. Only the player-facing ones are listed: the SDK's developer
+// overlays are off in a release build (main.cpp, HT_DEV_TOOLS).
 void HtSettingsDialog::DrawAbout() {
-  ImGui::TextDisabled("%s %s", HT_BUILD_TITLE, HT_BUILD_STAMP);
+  ImGui::TextDisabled("Hydro Thunder Hurricane Recompiled %s", HT_BUILD_STAMP);
   ImGui::TextDisabled("Hydro Thunder Hurricane, statically recompiled with rexglue.");
   ImGui::Spacing();
-  ImGui::TextDisabled("F5 settings    F6 frame rate    F4 all cvars    F3 debug overlay");
+  ImGui::TextDisabled("F5 settings    F6 frame rate");
 }
 
 void HtSettingsDialog::DrawSaveTools() {
@@ -841,6 +874,80 @@ void HtSettingsDialog::DrawSaveTools() {
   }
 }
 
+void HtSettingsDialog::DrawMods() {
+  const auto exe_dir = config_path_.parent_path();
+  const auto mods_dir = exe_dir / "mods";
+  const auto& mods = ht::ModStatuses();
+
+  if (mods.empty()) {
+    ImGui::TextDisabled("No mods installed.");
+  }
+  for (const auto& mod : mods) {
+    ImGui::PushID(mod.folder.c_str());
+    auto changed = mods_changed_.find(mod.folder);
+    bool on = changed != mods_changed_.end() ? changed->second : mod.enabled;
+    const std::string title = mod.name + (mod.version.empty() ? "" : "  " + mod.version);
+    if (ImGui::Checkbox(title.c_str(), &on)) {
+      if (ht::SetModEnabled(exe_dir, mod.folder, on)) {
+        if (on == mod.enabled) {
+          mods_changed_.erase(mod.folder);
+        } else {
+          mods_changed_[mod.folder] = on;
+        }
+      }
+    }
+    ImGui::Indent();
+    if (!mod.author.empty()) {
+      ImGui::TextDisabled("by %s", mod.author.c_str());
+    }
+    switch (mod.state) {
+      case ht::ModStatus::State::kLoaded:
+        ImGui::TextDisabled("Loaded: %d boat(s), %d skin(s)", mod.boats, mod.skins);
+        break;
+      case ht::ModStatus::State::kDisabled:
+        ImGui::TextDisabled("Off");
+        break;
+      case ht::ModStatus::State::kError:
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.4f, 1.0f));
+        ImGui::TextWrapped("Not loaded: %s", mod.message.c_str());
+        ImGui::PopStyleColor();
+        break;
+    }
+    for (const auto& w : mod.warnings) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+      ImGui::TextWrapped("Warning: %s", w.c_str());
+      ImGui::PopStyleColor();
+    }
+    if (changed != mods_changed_.end()) {
+      ImGui::TextDisabled(changed->second ? "Turns on when you restart the game."
+                                          : "Turns off when you restart the game.");
+    }
+    ImGui::Unindent();
+    ImGui::PopID();
+    ImGui::Spacing();
+  }
+
+  ImGui::Separator();
+  if (ImGui::Button("Open mods folder")) {
+    std::error_code ec;
+    std::filesystem::create_directories(mods_dir, ec);
+#if defined(_WIN32)
+    ::ShellExecuteW(nullptr, L"open", mods_dir.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#endif
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Export skin templates")) {
+    mods_status_ = ht::ExportSkinTemplates(exe_dir);
+  }
+  HelpMarker(
+      "Writes each boat's own skin to mods/_templates/ as a PNG to paint over, with its "
+      "settings as JSON. About 20 MB. These come from your copy of the game: use them, but "
+      "do not share them.");
+  if (!mods_status_.empty()) {
+    ImGui::TextDisabled("%s", mods_status_.c_str());
+  }
+}
+
 void HtSettingsDialog::DrawRows(const HtRow* rows, int count, const std::string& filter) {
   const bool filtering = !filter.empty();
   for (int i = 0; i < count; ++i) {
@@ -882,6 +989,9 @@ void HtSettingsDialog::DrawRows(const HtRow* rows, int count, const std::string&
         break;
       case HtRowKind::kAbout:
         DrawAbout();
+        break;
+      case HtRowKind::kMods:
+        DrawMods();
         break;
     }
   }
@@ -942,7 +1052,7 @@ void HtSettingsDialog::OnDraw(ImGuiIO& /*io*/) {
     filter_[0] = 0;
   }
   ImGui::SameLine();
-  ImGui::TextDisabled("|  PgUp/PgDn tabs  |  F4 every cvar  |  F6 frame rate");
+  ImGui::TextDisabled("|  PgUp/PgDn tabs  |  F6 frame rate");
   ImGui::Separator();
 
   // Page Up / Page Down move between tabs. ImGui's own tab bar is mouse-only,
@@ -987,9 +1097,8 @@ void HtSettingsDialog::OnDraw(ImGuiIO& /*io*/) {
       ImGui::Spacing();
       ImGui::TextDisabled("Nothing here matches \"%s\".", filter_);
       ImGui::TextWrapped(
-          "This panel is a curated subset. Press F4 for the SDK dialog, which lists all %d "
-          "registered cvars by raw name.",
-          int(rex::cvar::GetRegistry().size()));
+          "This panel shows the settings that matter for playing. Anything else can be set "
+          "by name in hydrothunder.toml.");
     }
   } else if (ImGui::BeginTabBar("##ht_tabbar")) {
     for (int index = 0; index < int(std::size(kTabs)); ++index) {
@@ -1008,6 +1117,11 @@ void HtSettingsDialog::OnDraw(ImGuiIO& /*io*/) {
       }
       ImGui::Spacing();
       DrawRows(tab.rows, tab.row_count, filter);
+      // A tab without settings (Mods) has nothing to reset.
+      if (std::none_of(tab.rows, tab.rows + tab.row_count, [](const HtRow& r) { return r.cvar; })) {
+        ImGui::EndTabItem();
+        continue;
+      }
       ImGui::Spacing();
       ImGui::Separator();
       ImGui::PushID(tab.name);

@@ -1,7 +1,9 @@
 # Build output. This is the 500+ MB that must never reach the repo.
 /out/
 /build/
-third_party/rexglue-sdk/out/
+# The rexglue SDK lives here locally but is not part of this repository;
+# see SDK_PATCHES.md for the changes it needs.
+/third_party/
 
 # The user's game files. Never commit these - the project ships no game content.
 /game_data/
