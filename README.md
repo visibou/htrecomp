@@ -1,4 +1,10 @@
+<div align="center">
+
 # Hydro Thunder Hurricane Recompiled
+
+[![Listed on PlayPorted](https://playported.com/badge.svg)](https://playported.com/ports/90-hydro-thunder-hurricane/)
+
+</div>
 
 A native PC build of the Xbox 360 game *Hydro Thunder Hurricane*, produced by
 static recompilation with the [rexglue SDK](https://github.com/rexglue/rexglue-sdk).
