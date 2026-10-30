@@ -7,6 +7,7 @@
 #include <rex/input/input_system.h>
 
 #include "ht_fps_overlay.h"
+#include "ht_player_name.h"
 #include "ht_settings_overlay.h"
 
 #include <atomic>
@@ -215,6 +216,9 @@ class HtPureApp : public HtBaseApp {
 
   void OnPostLaunchModule(rex::system::XThread* thread) override {
     HtBaseApp::OnPostLaunchModule(thread);
+
+    // Before the game's main thread is resumed, so it never sees "User".
+    ht::ApplyPlayerName(runtime()->kernel_state());
 
     // The release window title.
     //

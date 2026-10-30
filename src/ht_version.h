@@ -11,7 +11,7 @@
 // Internal short name. This also becomes the config filename and the log
 // prefix, so it must stay a valid Windows filename - no colons, no spaces.
 #define HT_BUILD_TITLE "htrecomp"
-#define HT_BUILD_STAMP "v2.0.0"
+#define HT_BUILD_STAMP "v2.2.0"
 
 // The name shown on the window. Set explicitly in main.cpp rather than by
 // renaming the app, precisely because this one is NOT a legal filename.

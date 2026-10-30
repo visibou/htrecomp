@@ -217,6 +217,9 @@ constexpr HtRow kInputRows[] = {
 constexpr HtRow kGameRows[] = {
     Special(HtRowKind::kLicense, "license_mask"),
     Special(HtRowKind::kShowFps, "ht_show_fps"),
+    S("player_name", "Player name",
+      "Your name in the game, up to 15 letters, digits and spaces. Takes effect the next "
+      "time the game starts."),
     E("user_language", "Language",
       "The console language reported to the game. Unsupported ones fall back to English.",
       kLanguageOptions, int(std::size(kLanguageOptions))),
@@ -580,7 +583,8 @@ void HtSettingsDialog::DrawFrameRateControls() {
   // (graphics_system.cpp) ticks at video_mode_refresh_rate when `vsync` is on
   // and at a flat 1000 Hz when it is off, and `vsync` also decides whether the
   // host waits for vblank. Presenting it as one mode avoids two checkboxes that
-  // secretly drive the same cvar.
+  // secretly drive the same cvar. Neither of those actually caps this game; the
+  // cap itself is ht_frame_limit.cpp, which reads the same two cvars.
   auto* vsync = Find("vsync");
   if (vsync) {
     const bool capped = (vsync->getter() == "true");
@@ -588,10 +592,11 @@ void HtSettingsDialog::DrawFrameRateControls() {
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Frame rate");
     HelpMarker(
-        "Capped paces the guest at the refresh rate below and waits for vblank. Uncapped runs the "
-        "guest vblank at 1000 Hz and never waits, so the game renders as fast as the machine "
-        "allows. The Xbox 360 original ran uncapped at roughly 40 fps, so this game is built for "
-        "a variable rate - but very high rates can still upset the physics, so raise it in steps.");
+        "Capped holds the game at the frame rate below. On a handheld, a cap the game can always "
+        "reach (60, or 40) gives a steadier picture and leaves more power for the GPU. Uncapped "
+        "renders as fast as the machine allows. The Xbox 360 original ran uncapped at roughly 40 "
+        "fps, so this game is built for a variable rate - but very high rates can still upset the "
+        "physics, so raise it in steps.");
     ImGui::SameLine(kLabelWidth);
     ImGui::SetNextItemWidth(kWidgetWidth);
     const char* modes[] = {"Uncapped", "Capped (V-Sync)"};
@@ -611,10 +616,10 @@ void HtSettingsDialog::DrawFrameRateControls() {
       ImGui::BeginDisabled();
     }
     ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted("Refresh rate (Hz)");
+    ImGui::TextUnformatted("Frame rate cap (fps)");
     HelpMarker(
-        "The guest video mode the game paces against. Read once when the vblank thread starts, so "
-        "it only takes effect after a restart. Ignored entirely while uncapped.");
+        "The most frames a second the game draws while capped. Takes effect at once. Ignored "
+        "while uncapped.");
     ImGui::SameLine(kLabelWidth);
     ImGui::SetNextItemWidth(kWidgetWidth);
 
@@ -625,14 +630,11 @@ void HtSettingsDialog::DrawFrameRateControls() {
                            ImGuiInputTextFlags_EnterReturnsTrue)) {
       value = std::clamp(value, vmin, vmax);
       rex::cvar::SetFlagByName("video_mode_refresh_rate", std::to_string(value));
-      restart_pending_ = true;
     }
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "restart");
 
     ImGui::Dummy(ImVec2(kLabelWidth - 8.0f, 0.0f));
     ImGui::SameLine();
-    for (double preset : {60.0, 75.0, 120.0, 144.0, 165.0, 240.0}) {
+    for (double preset : {30.0, 40.0, 60.0, 120.0, 144.0, 165.0}) {
       char label[16];
       std::snprintf(label, sizeof(label), "%g", preset);
       if (preset > vmax) {
@@ -640,7 +642,6 @@ void HtSettingsDialog::DrawFrameRateControls() {
       }
       if (ImGui::SmallButton(label)) {
         rex::cvar::SetFlagByName("video_mode_refresh_rate", std::to_string(preset));
-        restart_pending_ = true;
       }
       ImGui::SameLine();
     }

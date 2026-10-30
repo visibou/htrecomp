@@ -16,15 +16,16 @@ Everything here is beyond what the Xbox 360 release could do:
 
 | | |
 |---|---|
-| **Uncapped frame rate** | The console was locked to 30. Run it as fast as your hardware allows, or cap it to any refresh rate you like. |
+| **Uncapped frame rate** | The console was locked to 30. Run it as fast as your hardware allows, or cap it at any frame rate you like. |
 | **Any output resolution** | 1080p, 1440p, 4K. The game's own scene render target is a fixed size, so raising the output resolution costs essentially nothing - measured identical frame times from 1080p to 4K. |
 | **Higher internal resolution** | A separate scale for the 3D scene itself, for when you do want to spend the GPU time. |
 | **16x anisotropic filtering** | Sharpens the surface ahead of you. Nearly free on any modern GPU and the single best-looking change available. |
 | **Mods** | Add new boats with your own handling and new skins, without replacing anything. See [Mods](#mods). |
+| **Your own name** | Set the name the game calls you by, instead of "User". |
 | **Field of view** | Widen (or narrow) the race camera from the Game tab. The console was fixed at 100 degrees. |
 | **Tempest Pack DLC** | The three extra tracks, installed from your own copy. See [DLC](#dlc). |
 | **In-game settings menu** | Press **F5**. Display, Graphics, Audio, Input, Game, Mods and Fixes, with search and per-tab reset. No config editing. |
-| **Frame rate overlay** | Press **F6** for frame rate, frame time, a history graph and worst-frame tracking. |
+| **Frame rate overlay** | Press **F6** for frame rate, frame time, a history graph and worst-frame tracking, and optionally GPU time per frame. |
 | **Mouse & keyboard support** | Optional, alongside full controller support. |
 | **Modern display handling** | V-Sync or tearing/VRR, letterboxing, safe-area cropping, output dithering, monitor selection. |
 
@@ -137,12 +138,22 @@ The keyboard and mouse bindings are listed, and can be changed, under
 - **Internal resolution scale** (Graphics) is the expensive one - it multiplies
   the cost of the 3D scene, and 2x measures roughly 8x the GPU time. Raise it
   one step at a time.
-- **Frame rate** (Display) switches between uncapped and capped; the refresh
-  rate is typed in directly rather than dragged on a slider.
+- **Frame rate** (Display) switches between uncapped and capped; the cap is
+  typed in directly rather than dragged on a slider. On a handheld (ROG Ally,
+  Steam Deck), cap it at a rate the game can always reach, such as 60 or 40: it
+  stays steadier, and the power the CPU no longer spends goes to the GPU.
 - **Anisotropic filtering** (Graphics) is the best value in the panel.
+- **Player name** (Game) is the name the game calls you by, up to 15
+  characters. It takes effect the next time the game starts, and your save
+  stays where it is.
 - **Field of view** (Game) widens the race camera. 0 keeps the game's own 100
   degrees; 110 to 120 suits a wide monitor. It takes effect when the next race
-  starts.
+  starts. A wider view draws more of the track: 140 measured about 10% slower
+  than the default.
+
+- **GPU timing**: with `ht_gpu_perf = true` in `hydrothunder.toml`, F6 also
+  shows the GPU's time per frame and how much of it goes to render target
+  copies, resolves and texture loads. Include it when reporting performance.
 
 Settings are written to `hydrothunder.toml` beside the executable when the
 panel closes. The file is merged rather than rewritten, so any comments and
@@ -291,6 +302,17 @@ port, configure with `-DCMAKE_CXX_FLAGS=-DHT_DEV_TOOLS=1`.
   this project is built on.
 - [Xenia](https://github.com/xenia-project/xenia) - whose Xbox 360 research
   underpins much of the tooling this ecosystem relies on.
+- [HydroThunderPORT](https://github.com/monscriser/HydroThunderPORT) - whose
+  measurements showed where the GPU time went, and whose ideas - drawing the
+  game's 4x MSAA clears at 1x, direct texture loads, direct resolves and
+  resolving straight to textures - are reimplemented here for Direct3D 12.
+  The implementations here are this project's own.
+
+  Note that HydroThunderPORT is itself built on top of this project's 1.0
+  code: its own `provenance.json` lists this repository
+  (`github.com/visibou/htrecomp`, commit `ecae518`) as the app it starts from.
+  Its README does not credit this project anywhere. The recompilation, the
+  game fixes and the features it inherited were done here first.
 - **XEXTool by xorloser** - bundled with this release and used to convert the
   game executable during setup. All credit for that tool goes to its author;
   it is included unmodified.
