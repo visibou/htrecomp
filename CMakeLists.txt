@@ -11,7 +11,7 @@ if(HTRECOMP_STATIC_MSVC_RUNTIME)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(hydrothunder VERSION 2.0.0 LANGUAGES CXX)
+project(hydrothunder VERSION 2.2.0 LANGUAGES CXX)
 
 if(WIN32)
     enable_language(RC)
@@ -75,6 +75,9 @@ set(HT_SOURCES
     src/ht_mods.cpp
     src/ht_mods_merge.cpp
     src/ht_fov.cpp
+    src/ht_player_name.cpp
+    src/ht_frame_limit.cpp
+    src/ht_fast_memcpy.cpp
 )
 
 # Executable icon. enable_language(RC) is set above; the .rc references

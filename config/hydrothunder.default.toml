@@ -22,7 +22,9 @@ resolution = "1080p"
 fullscreen = false
 
 # Uncapped frame rate. The console was locked to 30.
-# Set vsync = true and video_mode_refresh_rate to cap it to your display.
+# Set vsync = true to cap it at video_mode_refresh_rate frames a second. On a
+# handheld (ROG Ally, Steam Deck), a cap the game can always reach - 60, or 40 -
+# is smoother and leaves more power for the GPU.
 vsync = false
 video_mode_refresh_rate = 60.0
 
@@ -42,7 +44,15 @@ resolution_scale = 1
 store_shaders = true
 async_shader_compilation = true
 
+# Show GPU time per frame in the F6 overlay (and log it every 5 seconds), split
+# into render target copies, resolves and texture loads. For performance reports.
+ht_gpu_perf = false
+
 # --- Game --------------------------------------------------------------------
+# Your name in the game, up to 15 letters, digits and spaces. Takes effect the
+# next time the game starts.
+player_name = "User"
+
 # Horizontal field of view of the race camera, in degrees (60-140). 0 keeps the
 # game's own 100. Takes effect when the next race starts.
 fov_horizontal = 0.0
