@@ -12,6 +12,9 @@
 /package/
 /release-package/
 *.zip
+# Recompiled game code. Generated locally from your own default.xex
+# (the generate-all target) and never committed.
+/generated/
 
 # Runtime and debug leftovers.
 /logs/

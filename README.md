@@ -273,13 +273,21 @@ The [rexglue SDK](https://github.com/rexglue/rexglue-sdk) is not part of this
 repository. Put it in `third_party/rexglue-sdk/` (or point `REXSDK_DIR` at it)
 and apply the changes described in [SDK_PATCHES.md](SDK_PATCHES.md).
 
+The recompiled C++ is not in this repository either: it is the game's own
+code, so you generate it from your copy. Put your `default.xex` in
+`game_data/`, decrypted and decompressed
+(`xextool -c u -e u -o default.xex default.xex`), then:
+
 ```sh
+cmake --preset relwithdebinfo
+cmake --build --preset relwithdebinfo --target generate-all
 cmake --preset relwithdebinfo
 cmake --build --preset relwithdebinfo -- -j3
 ```
 
-The recompiled C++ is committed under `generated/`, so **building does not
-need the game**. Only running it does.
+`generate-all` writes the recompiled C++ to `generated/`. The second configure
+picks it up. You only need to regenerate when the function config in
+`config/` changes.
 
 Keep the job count modest. The generated translation units are large and each
 one can take 1-2 GB in the compiler; an unbounded `--parallel` will exhaust
